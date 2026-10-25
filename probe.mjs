@@ -5,8 +5,9 @@ import { StringValue } from './node_modules/@actions/artifact/lib/generated/inde
 
 const client = internalArtifactTwirpClient({maxAttempts: 1});
 const backend = getBackendIdsFromToken();
-const name = `refinalize-overwrite-${process.env.GITHUB_RUN_ID}.json`;
-const placeholder = Buffer.from('{}');
+const name = `internal-signed-${process.env.GITHUB_RUN_ID}.json`;
+const mime = '\u0085application/json';
+const body = Buffer.from(JSON.stringify({marker: name}));
 const made = await client.CreateArtifact({
   ...backend,
   name,
@@ -15,55 +16,22 @@ const made = await client.CreateArtifact({
 });
 if (!made.ok) throw new Error('create-not-ok');
 const block = new BlobClient(made.signedUploadUrl).getBlockBlobClient();
-await block.uploadData(placeholder, {
-  blobHTTPHeaders: {blobContentType: 'application/octet-stream'},
-});
-const firstFinalize = await client.FinalizeArtifact({
-  ...backend, name, size: String(placeholder.length),
-});
-if (!firstFinalize.ok) throw new Error('first-finalize-not-ok');
+await block.uploadData(body, {blobHTTPHeaders: {blobContentType: mime}});
+const done = await client.FinalizeArtifact({...backend, name, size: String(body.length)});
+if (!done.ok) throw new Error('finalize-not-ok');
+await block.uploadData(body, {blobHTTPHeaders: {blobContentType: mime}});
 
-const repository = `${process.env.GITHUB_REPOSITORY}/actions/artifacts/${firstFinalize.artifactId}/zip`;
-const finalBody = Buffer.from(JSON.stringify({
-  full_name: repository,
-  owner: {login: 'control', avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4'},
-  description: 'refinalize-overwrite-marker',
-  stargazers_count: 0,
-}));
-await block.uploadData(finalBody, {
-  blobHTTPHeaders: {blobContentType: '\u0085application/json'},
-});
-let secondFinalize;
-try {
-  const again = await client.FinalizeArtifact({
-    ...backend, name, size: String(finalBody.length),
-  });
-  secondFinalize = {ok: again.ok, artifactId: String(again.artifactId)};
-} catch (error) {
-  secondFinalize = {error: String(error?.message || error).replace(/[\r\n]+/g, ' ').slice(0, 220)};
-}
-
-const first = await fetch(
-  `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${firstFinalize.artifactId}/zip`,
-  {
-    headers: {
-      Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'repo-cassette-refinalize-overwrite-probe',
-    },
-    redirect: 'manual',
-  },
-);
-const location = first.headers.get('location');
-const final = location ? await fetch(location) : first;
-const bytes = Buffer.from(await final.arrayBuffer());
-const finalType = final.headers.get('content-type') || '';
-console.log('REFINALIZE_OVERWRITE_RESULT', JSON.stringify({
-  firstArtifactId: String(firstFinalize.artifactId),
-  secondFinalize,
-  firstStatus: first.status,
-  finalStatus: final.status,
-  finalTypeCodePoints: Array.from(finalType, c => c.codePointAt(0)),
-  bodyMatches: bytes.equals(finalBody),
+const signed = await client.GetSignedArtifactURL({...backend, name});
+const parsed = new URL(signed.signedUrl);
+const response = await fetch(signed.signedUrl);
+const bytes = Buffer.from(await response.arrayBuffer());
+const type = response.headers.get('content-type') || '';
+console.log('INTERNAL_SIGNED_RESULT', JSON.stringify({
+  artifactId: String(done.artifactId),
+  status: response.status,
+  typeCodePoints: Array.from(type, c => c.codePointAt(0)),
+  bodyMatches: bytes.equals(body),
   size: bytes.length,
+  responseParamNames: Array.from(new Set(parsed.searchParams.keys())).sort(),
+  hasRsct: parsed.searchParams.has('rsct'),
 }));
