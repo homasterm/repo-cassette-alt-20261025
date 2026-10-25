@@ -1,87 +1,64 @@
-import https from 'node:https';
+import { BlobClient } from '@azure/storage-blob';
+import { internalArtifactTwirpClient } from './node_modules/@actions/artifact/lib/internal/shared/artifact-twirp-client.js';
+import { getBackendIdsFromToken } from './node_modules/@actions/artifact/lib/internal/shared/util.js';
+import { StringValue } from './node_modules/@actions/artifact/lib/generated/index.js';
 
-const repository = process.env.GITHUB_REPOSITORY;
-const token = process.env.GITHUB_TOKEN;
+const client = internalArtifactTwirpClient({maxAttempts: 1});
+const backend = getBackendIdsFromToken();
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: {login: 'repo', avatar_url: 'https://example.invalid/benign.png'},
-  description: 'codeql-carrier-marker',
+  description: 'percent-slash-registered-mime-marker',
   stargazers_count: 0,
 }));
-
-function request(method, target, headers = {}, payload = null) {
-  return new Promise((resolve, reject) => {
-    const url = target instanceof URL ? target : new URL(target);
-    const req = https.request(url, {method, headers}, (res) => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve({
-        status: res.statusCode,
-        headers: res.headers,
-        body: Buffer.concat(chunks),
-      }));
-    });
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
-
-const apiHeaders = {
-  Authorization: `Bearer ${token}`,
+const headers = {
+  Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
   Accept: 'application/vnd.github.v3+json',
-  'X-GitHub-Api-Version': '2022-11-28',
-  'User-Agent': 'repo-cassette-codeql-carrier-probe',
+  'User-Agent': 'repo-cassette-version-boundary-probe',
 };
-const cases = [
-  {language: 'javascript-typescript', type: 'application/zip', label: 'control'},
-  {language: 'python', type: '\u0085application/json', label: 'nel-json'},
-];
+
 const results = [];
-
-for (const item of cases) {
-  const upload = new URL(`https://uploads.github.com/repos/${repository}/code-scanning/codeql/databases/${item.language}`);
-  upload.searchParams.set('name', `repo-cassette-${item.label}-${process.env.GITHUB_RUN_ID}`);
-  upload.searchParams.set('commit_oid', process.env.GITHUB_SHA);
-  let uploadResponse;
-  let first;
-  let final;
+for (const mimeType of ['application%2Fvnd.apache.thrift.json']) {
+  const version = 7;
+  const name = `repo-cassette-percent-slash-${process.env.GITHUB_RUN_ID}`;
   try {
-    uploadResponse = await request('POST', upload, {
-      ...apiHeaders,
-      'Content-Type': item.type,
-      'Content-Length': String(body.length),
-    }, body);
-
-    const download = `https://api.github.com/repos/${repository}/code-scanning/codeql/databases/${item.language}`;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      first = await request('GET', download, apiHeaders);
-      if (first.status === 302 && first.headers.location) break;
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    }
-    if (first?.status === 302 && first.headers.location) {
-      final = await request('GET', first.headers.location, {'User-Agent': apiHeaders['User-Agent']});
-    }
+    const made = await client.CreateArtifact({
+      ...backend,
+      name,
+      version,
+      mimeType: StringValue.create({value: mimeType}),
+    });
+    if (!made.ok) throw new Error('create-not-ok');
+    await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
+      blobHTTPHeaders: {blobContentType: mimeType},
+    });
+    const done = await client.FinalizeArtifact({...backend, name, size: String(body.length)});
+    if (!done.ok) throw new Error('finalize-not-ok');
+    const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`;
+    const first = await fetch(url, {headers, redirect: 'manual'});
+    const location = first.headers.get('location');
+    const signed = location ? new URL(location) : null;
+    const final = location ? await fetch(location) : first;
+    const bytes = Buffer.from(await final.arrayBuffer());
+    const type = final.headers.get('content-type') || '';
     results.push({
-      label: item.label,
-      requestTypeCodePoints: Array.from(item.type, c => c.codePointAt(0)),
-      uploadStatus: uploadResponse.status,
-      uploadResponseType: uploadResponse.headers['content-type'] || null,
-      downloadStatus: first?.status || null,
-      finalStatus: final?.status || null,
-      finalType: final?.headers['content-type'] || null,
-      finalTypeCodePoints: Array.from(final?.headers['content-type'] || '', c => c.codePointAt(0)),
-      bodyMatches: Boolean(final && final.body.equals(body)),
-      finalSize: final?.body.length || null,
+      version,
+      requestedType: mimeType,
+      artifactId: String(done.artifactId),
+      status: first.status,
+      finalStatus: final.status,
+      type,
+      typeCodePoints: Array.from(type, c => c.codePointAt(0)),
+      signedRsctValues: signed ? signed.searchParams.getAll('rsct') : [],
+      signedRscdContainsMarker: signed
+        ? (signed.searchParams.get('rscd') || '').includes('&rsct=.json')
+        : false,
+      bodyMatches: bytes.equals(body),
+      size: bytes.length,
     });
   } catch (error) {
-    results.push({label: item.label, error: String(error?.message || error).slice(0, 160)});
-  } finally {
-    const cleanup = `https://api.github.com/repos/${repository}/code-scanning/codeql/databases/${item.language}`;
-    const deleted = await request('DELETE', cleanup, apiHeaders).catch(() => null);
-    const result = results[results.length - 1];
-    if (result?.label === item.label) result.cleanupStatus = deleted?.status || null;
+    results.push({version, requestedType: mimeType,
+      error: String(error?.message || error).slice(0, 160)});
   }
 }
-
-console.log('CODEQL_CARRIER_RESULT', JSON.stringify(results));
+console.log('PERCENT_SLASH_RESULT', JSON.stringify(results));
