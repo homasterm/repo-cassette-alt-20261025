@@ -1,0 +1,29 @@
+{
+  "version": 6,
+  "artifactId": "12593817691",
+  "firstStatus": 302,
+  "firstType": "text/html;charset=utf-8",
+  "hasLocation": true,
+  "finalStatus": 200,
+  "finalType": "application/zip",
+  "finalTypeCodePoints": [
+    97,
+    112,
+    112,
+    108,
+    105,
+    99,
+    97,
+    116,
+    105,
+    111,
+    110,
+    47,
+    122,
+    105,
+    112
+  ],
+  "bodyMatches": true,
+  "bodyLength": 143,
+  "expectedLength": 143
+}
