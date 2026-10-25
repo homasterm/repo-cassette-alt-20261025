@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@actions/artifact": "4.6.2",
+    "@azure/storage-blob": "12.28.0"
+  }
+}
