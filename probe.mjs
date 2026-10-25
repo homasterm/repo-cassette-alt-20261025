@@ -13,18 +13,9 @@ const body = Buffer.from(JSON.stringify({
   stargazers_count: 0,
 }));
 
-let invalidError = '';
-try {
-  await client.CreateArtifact({...backend, name, version: 7,
-    mimeType: StringValue.create({value: '\u0085application/json'})});
-} catch (error) {
-  invalidError = String(error?.message || error).slice(0, 240);
-}
-if (!invalidError) throw new Error('invalid MIME unexpectedly succeeded');
-
 const made = await client.CreateArtifact({...backend, name, version: 7,
-  mimeType: StringValue.create({value: 'application/octet-stream'})});
-if (!made.ok) throw new Error('fallback CreateArtifact returned not ok');
+  mimeType: StringValue.create({value: 'json'})});
+if (!made.ok) throw new Error('bare-json CreateArtifact returned not ok');
 await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
   blobHTTPHeaders: {blobContentType: '\u0085application/json'},
 });
@@ -39,7 +30,7 @@ const location = first.headers.get('location');
 const final = location ? await fetch(location) : first;
 const bytes = Buffer.from(await final.arrayBuffer());
 const type = final.headers.get('content-type') || '';
-console.log('FAILED_CREATE_FALLBACK_RESULT', JSON.stringify({
-  invalidRejected: Boolean(invalidError), artifactId:String(done.artifactId),
+console.log('BARE_JSON_RESULT', JSON.stringify({
+  artifactId:String(done.artifactId),
   status:first.status, finalStatus:final.status, type,
   typeCodePoints:Array.from(type, c => c.codePointAt(0)), bodyMatches:bytes.equals(body)}));
