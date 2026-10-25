@@ -1,0 +1,71 @@
+{
+  "uploads": [
+    {
+      "label": "control",
+      "language": "javascript-typescript",
+      "requestTypeCodePoints": [
+        97,
+        112,
+        112,
+        108,
+        105,
+        99,
+        97,
+        116,
+        105,
+        111,
+        110,
+        47,
+        122,
+        105,
+        112
+      ],
+      "status": 422,
+      "responseType": "application/json; charset=utf-8",
+      "responsePrefix": "{\"message\":\"Upload does not appear to be a valid CodeQL database\",\"request_id\":\"3008:3DC7E6:A250A5:BEB923:6ADDCF93\",\"documentation_url\":\"https://docs.github.com/rest/code-scanning/code-scanning#update-the-state-of-a-codeql-database-upload\"}"
+    },
+    {
+      "label": "nel",
+      "language": "python",
+      "requestTypeCodePoints": [
+        133,
+        97,
+        112,
+        112,
+        108,
+        105,
+        99,
+        97,
+        116,
+        105,
+        111,
+        110,
+        47,
+        106,
+        115,
+        111,
+        110
+      ],
+      "status": 422,
+      "responseType": "application/json; charset=utf-8",
+      "responsePrefix": "{\"message\":\"Validation Failed\",\"request_id\":\"3008:3DC7E6:A250FA:BEB990:6ADDCF94\",\"documentation_url\":\"https://docs.github.com/rest\",\"errors\":[{\"resource\":\"CodeqlDatabase\",\"code\":\"custom\",\"field\":\"content_type\",\"message\":\"content_type is not"
+    }
+  ],
+  "downloads": [
+    {
+      "label": "control",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "hasLocation": false,
+      "responsePrefix": "{\"message\":\"No database available for \\\"javascript-typescript\\\" yet. Please try again in a bit.\",\"documentation_url\":\"https://docs.github.com/rest/code-scanning/code-scanning#get-a"
+    },
+    {
+      "label": "nel",
+      "status": 404,
+      "contentType": "application/json; charset=utf-8",
+      "hasLocation": false,
+      "responsePrefix": "{\"message\":\"No database available for \\\"python\\\" yet. Please try again in a bit.\",\"documentation_url\":\"https://docs.github.com/rest/code-scanning/code-scanning#get-a-codeql-databas"
+    }
+  ],
+  "bodyLength": 147
+}
