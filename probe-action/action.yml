@@ -1,5 +1,5 @@
 name: Repo Cassette controlled probe action
-description: Temporary authorized MIME-boundary test
+description: Temporary authorized live step-log test
 runs:
   using: node20
-  main: ../probe.mjs
+  main: ../live-step-probe.mjs
