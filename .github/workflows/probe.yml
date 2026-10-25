@@ -1,0 +1,15 @@
+name: Repo Cassette controlled MIME probe
+on:
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --no-package-lock --ignore-scripts
+      - run: node probe.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
