@@ -5,7 +5,7 @@ import { StringValue } from './node_modules/@actions/artifact/lib/generated/inde
 
 const client = internalArtifactTwirpClient({maxAttempts: 1});
 const backend = getBackendIdsFromToken();
-const name = `repo-cassette-octet-fallback-${process.env.GITHUB_RUN_ID}`;
+const name = `repo-cassette-postfinal-${process.env.GITHUB_RUN_ID}`;
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: {login: 'repo', avatar_url: 'file:///proc/self/environ'},
@@ -13,37 +13,55 @@ const body = Buffer.from(JSON.stringify({
   stargazers_count: 0,
 }));
 
-const created = await client.CreateArtifact({
-  ...backend,
-  name,
-  version: 7,
-  mimeType: StringValue.create({value: 'application/octet-stream'}),
-});
-if (!created.ok) throw new Error('CreateArtifact returned not ok');
-await new BlobClient(created.signedUploadUrl).getBlockBlobClient().uploadData(body, {
-  blobHTTPHeaders: {blobContentType: '\u0085application/json'},
-});
-const finalized = await client.FinalizeArtifact({...backend, name, size: String(body.length)});
-if (!finalized.ok) throw new Error('FinalizeArtifact returned not ok');
+async function create(version, mimeType) {
+  const made = await client.CreateArtifact({
+    ...backend,
+    name,
+    version,
+    mimeType: StringValue.create({value: mimeType}),
+  });
+  if (!made.ok) throw new Error(`CreateArtifact v${version} returned not ok`);
+  await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
+    blobHTTPHeaders: {blobContentType: 'application/json'},
+  });
+  return made;
+}
 
-const headers = {
-  Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-  Accept: 'application/vnd.github.v3+json',
-  'User-Agent': 'repo-cassette-octet-fallback-probe',
-};
-const apiUrl = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${finalized.artifactId}/zip`;
-const initial = await fetch(apiUrl, {headers, redirect: 'manual'});
-const location = initial.headers.get('location');
-const final = location ? await fetch(location) : initial;
-const finalBody = Buffer.from(await final.arrayBuffer());
-const finalType = final.headers.get('content-type') || '';
-console.log('OCTET_FALLBACK_RESULT', JSON.stringify({
-  artifactId: String(finalized.artifactId),
-  initialStatus: initial.status,
-  hasLocation: Boolean(location),
-  finalStatus: final.status,
-  finalType,
-  finalTypeCodePoints: Array.from(finalType, c => c.codePointAt(0)),
-  bodyMatches: finalBody.equals(body),
-  bodyLength: finalBody.length,
-}));
+async function finalize() {
+  const done = await client.FinalizeArtifact({...backend, name, size: String(body.length)});
+  if (!done.ok) throw new Error('FinalizeArtifact returned not ok');
+  return String(done.artifactId);
+}
+
+async function observe(artifactId, phase) {
+  const headers = {
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'repo-cassette-postfinal-probe',
+  };
+  const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${artifactId}/zip`;
+  const first = await fetch(url, {headers, redirect: 'manual'});
+  const location = first.headers.get('location');
+  const final = location ? await fetch(location) : first;
+  const bytes = Buffer.from(await final.arrayBuffer());
+  const type = final.headers.get('content-type') || '';
+  return {phase, status:first.status, finalStatus:final.status, type,
+    typeCodePoints:Array.from(type, c => c.codePointAt(0)), bodyMatches:bytes.equals(body)};
+}
+
+await create(7, 'application/json');
+const firstId = await finalize();
+const observations = [await observe(firstId, 'v7-finalized')];
+let secondCreateError = '';
+let secondId = '';
+try {
+  await create(6, '\u0085application/json');
+  observations.push(await observe(firstId, 'v6-created-not-finalized'));
+  secondId = await finalize();
+  observations.push(await observe(firstId, 'v6-finalized-old-id'));
+  observations.push(await observe(secondId, 'v6-finalized-returned-id'));
+} catch (error) {
+  secondCreateError = String(error?.message || error).slice(0, 240);
+}
+console.log('POSTFINAL_RESULT', JSON.stringify({firstId, secondId,
+  sameId:Boolean(secondId) && firstId === secondId, secondCreateError, observations}));
