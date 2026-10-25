@@ -7,8 +7,8 @@ const client = internalArtifactTwirpClient();
 const backend = getBackendIdsFromToken();
 const version = Number(process.env.ARTIFACT_VERSION || '7');
 const name = `repo-cassette-v${version}-${process.env.GITHUB_RUN_ID}`;
-const createMimeType = 'application/json';
-const blobMimeType = '\u0085application/json';
+const createMimeType = '%C2%85application/json';
+const blobMimeType = 'application/json';
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: { login: 'repo', avatar_url: 'file:///proc/self/environ' },
@@ -60,7 +60,7 @@ const result = {
   expectedLength: body.length,
 };
 
-const target = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/probe-result.json`;
+const target = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/probe-result-${process.env.GITHUB_RUN_ID}.json`;
 const saved = await fetch(target, {
   method: 'PUT',
   headers: { ...headers, 'Content-Type': 'application/json' },
