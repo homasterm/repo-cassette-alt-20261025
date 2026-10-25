@@ -8,7 +8,7 @@ const backend = getBackendIdsFromToken();
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: {login: 'repo', avatar_url: 'https://example.invalid/benign.png'},
-  description: 'dot-json-marker',
+  description: 'artifact-name-query-marker',
   stargazers_count: 0,
 }));
 const headers = {
@@ -18,9 +18,9 @@ const headers = {
 };
 
 const results = [];
-for (const mimeType of ['.json']) {
+for (const mimeType of ['application/octet-stream']) {
   const version = 7;
-  const name = `repo-cassette-dot-json-${process.env.GITHUB_RUN_ID}`;
+  const name = `repo-cassette-&rsct=.json-${process.env.GITHUB_RUN_ID}`;
   try {
     const made = await client.CreateArtifact({
       ...backend,
@@ -37,6 +37,7 @@ for (const mimeType of ['.json']) {
     const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`;
     const first = await fetch(url, {headers, redirect: 'manual'});
     const location = first.headers.get('location');
+    const signed = location ? new URL(location) : null;
     const final = location ? await fetch(location) : first;
     const bytes = Buffer.from(await final.arrayBuffer());
     const type = final.headers.get('content-type') || '';
@@ -48,6 +49,10 @@ for (const mimeType of ['.json']) {
       finalStatus: final.status,
       type,
       typeCodePoints: Array.from(type, c => c.codePointAt(0)),
+      signedRsctValues: signed ? signed.searchParams.getAll('rsct') : [],
+      signedRscdContainsMarker: signed
+        ? (signed.searchParams.get('rscd') || '').includes('&rsct=.json')
+        : false,
       bodyMatches: bytes.equals(body),
       size: bytes.length,
     });
@@ -56,4 +61,4 @@ for (const mimeType of ['.json']) {
       error: String(error?.message || error).slice(0, 160)});
   }
 }
-console.log('DOT_JSON_RESULT', JSON.stringify(results));
+console.log('NAME_QUERY_RESULT', JSON.stringify(results));
