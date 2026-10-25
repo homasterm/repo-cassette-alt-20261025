@@ -2,4 +2,4 @@ name: Repo Cassette controlled probe action
 description: Temporary authorized artifact response-type differential
 runs:
   using: node20
-  main: ../action-probe.mjs
+  main: ../probe.mjs
