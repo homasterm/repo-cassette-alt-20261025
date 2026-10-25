@@ -4,6 +4,7 @@ on:
 permissions:
   actions: write
   contents: write
+  security-events: write
 jobs:
   probe:
     runs-on: ubuntu-latest
