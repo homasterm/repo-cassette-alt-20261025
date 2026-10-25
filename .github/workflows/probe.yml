@@ -1,9 +1,9 @@
-name: Repo Cassette live step-log probe
+name: Repo Cassette artifact response-type differential
 on:
   workflow_dispatch:
 permissions:
   actions: read
-  contents: read
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
