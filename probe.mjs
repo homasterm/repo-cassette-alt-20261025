@@ -50,4 +50,21 @@ for (const artifact of listed.artifacts) {
     size: bytes.length,
   });
 }
-console.log('PREFINALIZE_PUBLIC_RESULT', JSON.stringify({count: rows.length, rows}));
+let direct;
+try {
+  const signed = await client.GetSignedArtifactURL({...backend, name});
+  const parsed = new URL(signed.signedUrl);
+  const response = await fetch(signed.signedUrl);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const type = response.headers.get('content-type') || '';
+  direct = {
+    status: response.status,
+    typeCodePoints: Array.from(type, c => c.codePointAt(0)),
+    bodyMatches: bytes.equals(body),
+    hasRsct: parsed.searchParams.has('rsct'),
+    paramNames: Array.from(new Set(parsed.searchParams.keys())).sort(),
+  };
+} catch (error) {
+  direct = {error: String(error?.message || error).replace(/[\r\n]+/g, ' ').slice(0, 240)};
+}
+console.log('PREFINALIZE_PUBLIC_RESULT', JSON.stringify({count: rows.length, rows, direct}));
