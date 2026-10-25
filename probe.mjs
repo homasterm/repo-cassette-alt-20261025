@@ -16,8 +16,8 @@ const body = Buffer.from(JSON.stringify({
 const first = await client.CreateArtifact({
   ...backend,
   name,
-  version: 6,
-  mimeType: StringValue.create({value: '\u0085application/json'}),
+  version: 7,
+  mimeType: StringValue.create({value: 'application/json'}),
 });
 if (!first.ok) throw new Error('first CreateArtifact returned not ok');
 
@@ -27,8 +27,8 @@ try {
   second = await client.CreateArtifact({
     ...backend,
     name,
-    version: 7,
-    mimeType: StringValue.create({value: 'application/json'}),
+    version: 6,
+    mimeType: StringValue.create({value: '\u0085application/json'}),
   });
 } catch (error) {
   secondError = String(error?.message || error).slice(0, 240);
