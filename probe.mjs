@@ -1,44 +1,43 @@
+import { BlobClient } from '@azure/storage-blob';
+import { internalArtifactTwirpClient } from './node_modules/@actions/artifact/lib/internal/shared/artifact-twirp-client.js';
 import { getBackendIdsFromToken } from './node_modules/@actions/artifact/lib/internal/shared/util.js';
 
-const base = process.env.ACTIONS_RESULTS_URL;
-const token = process.env.ACTIONS_RUNTIME_TOKEN;
+const client = internalArtifactTwirpClient({maxAttempts: 1});
 const backend = getBackendIdsFromToken();
-
-function varint(n) {
-  const out = [];
-  do {
-    let b = n & 0x7f;
-    n >>>= 7;
-    if (n) b |= 0x80;
-    out.push(b);
-  } while (n);
-  return Buffer.from(out);
+const name = `prefinalize-blobtype-${process.env.GITHUB_RUN_ID}`;
+const mime = '\u0085application/json';
+const result = {};
+try {
+  const made = await client.CreateArtifact({...backend, name, version: 7});
+  if (!made.ok) throw new Error('create-not-ok');
+  const block = new BlobClient(made.signedUploadUrl).getBlockBlobClient();
+  const placeholder = Buffer.from('{}');
+  await block.uploadData(placeholder, {blobHTTPHeaders: {blobContentType: mime}});
+  const done = await client.FinalizeArtifact({...backend, name, size: String(placeholder.length)});
+  if (!done.ok) throw new Error('finalize-not-ok');
+  result.artifactId = String(done.artifactId);
+  const repository = `${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`;
+  const body = Buffer.from(JSON.stringify({
+    full_name: repository,
+    owner: {login: 'control', avatar_url: 'file:///proc/self/environ'},
+    description: 'prefinalize-blobtype-marker', stargazers_count: 0,
+  }));
+  await block.uploadData(body, {blobHTTPHeaders: {blobContentType: mime}});
+  const first = await fetch(
+    `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`,
+    {headers: {Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+               Accept: 'application/vnd.github.v3+json',
+               'User-Agent': 'repo-cassette-prefinalize-blobtype-probe'},
+     redirect: 'manual'},
+  );
+  const location = first.headers.get('location');
+  const final = location ? await fetch(location) : first;
+  const bytes = Buffer.from(await final.arrayBuffer());
+  const type = final.headers.get('content-type') || '';
+  Object.assign(result, {firstStatus: first.status, finalStatus: final.status,
+    typeCodePoints: Array.from(type, c => c.codePointAt(0)), bodyMatches: bytes.equals(body),
+    repository, size: bytes.length});
+} catch (error) {
+  result.error = String(error?.message || error).replace(/[\r\n]+/g, ' ').slice(0, 300);
 }
-function bytesField(number, bytes) {
-  return Buffer.concat([varint((number << 3) | 2), varint(bytes.length), bytes]);
-}
-function stringField(number, text) {
-  return bytesField(number, Buffer.from(text, 'utf8'));
-}
-
-const name = `invalid-utf8-${process.env.GITHUB_RUN_ID}`;
-const invalidMime = Buffer.concat([Buffer.from([0x85]), Buffer.from('application/json')]);
-const wrapper = bytesField(1, invalidMime);
-const request = Buffer.concat([
-  stringField(1, backend.workflowRunBackendId),
-  stringField(2, backend.workflowJobRunBackendId),
-  stringField(3, name),
-  varint(5 << 3), varint(7),
-  bytesField(6, wrapper),
-]);
-
-const url = new URL('/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact', base);
-const response = await fetch(url, {
-  method: 'POST',
-  headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/protobuf',
-            'User-Agent': 'repo-cassette-invalid-utf8-probe'},
-  body: request,
-});
-const body = Buffer.from(await response.arrayBuffer()).toString('utf8')
-  .replace(/[\r\n]+/g, ' ').slice(0, 300);
-console.log('INVALID_UTF8_RESULT', JSON.stringify({status: response.status, body}));
+console.log('PREFINALIZE_BLOBTYPE_RESULT', JSON.stringify(result));
