@@ -19,19 +19,22 @@ if (!job) throw new Error('current in-progress job unavailable');
 const step = (job.steps || []).find(item => item.status === 'in_progress');
 if (!step) throw new Error('current in-progress step unavailable');
 
-const endpoint = `https://api.github.com/repos/${repository}/actions/jobs/${job.id}/steps/${step.number}/logs`;
-const first = await fetch(endpoint, {headers, redirect: 'manual'});
-const location = first.headers.get('location');
-const final = location
-  ? await fetch(location, {headers: {'User-Agent': 'repo-cassette-live-step-probe'}})
-  : first;
-const body = Buffer.from(await final.arrayBuffer());
-console.log('LIVE_STEP_RESULT', JSON.stringify({
-  jobId: String(job.id),
-  stepNumber: step.number,
-  firstStatus: first.status,
-  hasLocation: Boolean(location),
-  finalStatus: final.status,
-  finalContentType: final.headers.get('content-type') || '',
-  bodyBytes: body.length,
-}));
+for (const stepNumber of new Set([step.number, 3])) {
+  const endpoint = `https://api.github.com/repos/${repository}/actions/jobs/${job.id}/steps/${stepNumber}/logs`;
+  const first = await fetch(endpoint, {headers, redirect: 'manual'});
+  const location = first.headers.get('location');
+  const final = location
+    ? await fetch(location, {headers: {'User-Agent': 'repo-cassette-live-step-probe'}})
+    : first;
+  const body = Buffer.from(await final.arrayBuffer());
+  console.log('LIVE_STEP_RESULT', JSON.stringify({
+    jobId: String(job.id),
+    stepNumber,
+    apiReportedInProgressStep: step.number,
+    firstStatus: first.status,
+    hasLocation: Boolean(location),
+    finalStatus: final.status,
+    finalContentType: final.headers.get('content-type') || '',
+    bodyBytes: body.length,
+  }));
+}
