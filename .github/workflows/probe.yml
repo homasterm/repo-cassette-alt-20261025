@@ -1,16 +1,15 @@
-name: Repo Cassette controlled MIME probe
+name: Repo Cassette cache route probe
 on:
   workflow_dispatch:
 permissions:
   actions: write
-  contents: write
-  security-events: write
+  contents: read
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm install --no-package-lock --ignore-scripts
-      - uses: ./probe-action
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/cache/save@v4
+        with:
+          path: cache-payload.json
+          key: repo-cassette-${{ github.run_id }}
