@@ -10,6 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm install --no-package-lock --ignore-scripts
-      - run: node probe.mjs
+      - uses: ./probe-action
         env:
           GITHUB_TOKEN: ${{ github.token }}
