@@ -1,13 +1,14 @@
 import { BlobClient } from '@azure/storage-blob';
 import { internalArtifactTwirpClient } from './node_modules/@actions/artifact/lib/internal/shared/artifact-twirp-client.js';
 import { getBackendIdsFromToken } from './node_modules/@actions/artifact/lib/internal/shared/util.js';
+import { StringValue } from './node_modules/@actions/artifact/lib/generated/index.js';
 
 const client = internalArtifactTwirpClient();
 const backend = getBackendIdsFromToken();
 const version = Number(process.env.ARTIFACT_VERSION || '7');
 const name = `repo-cassette-v${version}-${process.env.GITHUB_RUN_ID}`;
-const createMimeType = 'omitted';
-const blobMimeType = '\u0085application/json';
+const createMimeType = 'application/json\u0085';
+const blobMimeType = 'application/json';
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: { login: 'repo', avatar_url: 'file:///proc/self/environ' },
@@ -19,6 +20,7 @@ const made = await client.CreateArtifact({
   ...backend,
   name,
   version,
+  mimeType: StringValue.create({ value: createMimeType }),
 });
 if (!made.ok) throw new Error('CreateArtifact returned not ok');
 await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
