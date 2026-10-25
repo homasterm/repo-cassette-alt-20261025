@@ -8,24 +8,23 @@ const backend = getBackendIdsFromToken();
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: {login: 'repo', avatar_url: 'https://example.invalid/benign.png'},
-  description: 'percent-slash-registered-mime-marker',
+  description: 'dot-json-mime-marker',
   stargazers_count: 0,
 }));
 const headers = {
   Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
   Accept: 'application/vnd.github.v3+json',
-  'User-Agent': 'repo-cassette-version-boundary-probe',
+  'User-Agent': 'repo-cassette-dot-json-mime-probe',
 };
 
 const results = [];
-for (const mimeType of ['application%2Fvnd.apache.thrift.json']) {
-  const version = 7;
-  const name = `repo-cassette-percent-slash-${process.env.GITHUB_RUN_ID}`;
+for (const [index, mimeType] of ['application/json', 'application.json', 'foo.json'].entries()) {
+  const name = `repo-cassette-dot-json-${index}-${process.env.GITHUB_RUN_ID}`;
   try {
     const made = await client.CreateArtifact({
       ...backend,
       name,
-      version,
+      version: 7,
       mimeType: StringValue.create({value: mimeType}),
     });
     if (!made.ok) throw new Error('create-not-ok');
@@ -37,28 +36,19 @@ for (const mimeType of ['application%2Fvnd.apache.thrift.json']) {
     const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`;
     const first = await fetch(url, {headers, redirect: 'manual'});
     const location = first.headers.get('location');
-    const signed = location ? new URL(location) : null;
     const final = location ? await fetch(location) : first;
     const bytes = Buffer.from(await final.arrayBuffer());
-    const type = final.headers.get('content-type') || '';
     results.push({
-      version,
-      requestedType: mimeType,
+      mimeType,
       artifactId: String(done.artifactId),
-      status: first.status,
+      firstStatus: first.status,
       finalStatus: final.status,
-      type,
-      typeCodePoints: Array.from(type, c => c.codePointAt(0)),
-      signedRsctValues: signed ? signed.searchParams.getAll('rsct') : [],
-      signedRscdContainsMarker: signed
-        ? (signed.searchParams.get('rscd') || '').includes('&rsct=.json')
-        : false,
+      finalType: final.headers.get('content-type') || '',
       bodyMatches: bytes.equals(body),
       size: bytes.length,
     });
   } catch (error) {
-    results.push({version, requestedType: mimeType,
-      error: String(error?.message || error).slice(0, 160)});
+    results.push({mimeType, error: String(error?.message || error).slice(0, 180)});
   }
 }
-console.log('PERCENT_SLASH_RESULT', JSON.stringify(results));
+console.log('DOT_JSON_MIME_RESULT', JSON.stringify(results));
