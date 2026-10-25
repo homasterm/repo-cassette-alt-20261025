@@ -1,15 +1,18 @@
-name: Repo Cassette cache route probe
+name: Repo Cassette omitted MIME probe
 on:
   workflow_dispatch:
 permissions:
   actions: write
-  contents: read
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache/save@v4
+      - uses: actions/setup-node@v4
         with:
-          path: cache-payload.json
-          key: repo-cassette-${{ github.run_id }}
+          node-version: '24'
+      - run: npm install --ignore-scripts
+      - uses: ./probe-action
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
