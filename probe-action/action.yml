@@ -1,5 +1,5 @@
 name: Repo Cassette controlled probe action
-description: Temporary authorized live step-log test
+description: Temporary authorized artifact response-type differential
 runs:
   using: node20
-  main: ../live-step-probe.mjs
+  main: ../action-probe.mjs
