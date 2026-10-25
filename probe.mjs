@@ -48,33 +48,46 @@ for (const signedUrl of [first.signedUploadUrl, second.signedUploadUrl]) {
     blobHTTPHeaders: {blobContentType: 'application/json'},
   });
 }
-const finalized = await client.FinalizeArtifact({
+const finalizedFirst = await client.FinalizeArtifact({
   ...backend,
   name,
   size: String(body.length),
 });
-if (!finalized.ok) throw new Error('FinalizeArtifact returned not ok');
+if (!finalizedFirst.ok) throw new Error('first FinalizeArtifact returned not ok');
+const finalizedSecond = await client.FinalizeArtifact({
+  ...backend,
+  name,
+  size: String(body.length),
+});
+if (!finalizedSecond.ok) throw new Error('second FinalizeArtifact returned not ok');
 
 const headers = {
   Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
   Accept: 'application/vnd.github.v3+json',
   'User-Agent': 'repo-cassette-sequential-probe',
 };
-const apiUrl = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${finalized.artifactId}/zip`;
-const initial = await fetch(apiUrl, {headers, redirect: 'manual'});
-const location = initial.headers.get('location');
-const final = location ? await fetch(location) : initial;
-const finalBody = Buffer.from(await final.arrayBuffer());
-const finalType = final.headers.get('content-type') || '';
+const observations = [];
+for (const artifactId of [finalizedFirst.artifactId, finalizedSecond.artifactId]) {
+  const apiUrl = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${artifactId}/zip`;
+  const initial = await fetch(apiUrl, {headers, redirect: 'manual'});
+  const location = initial.headers.get('location');
+  const final = location ? await fetch(location) : initial;
+  const finalBody = Buffer.from(await final.arrayBuffer());
+  const finalType = final.headers.get('content-type') || '';
+  observations.push({
+    artifactId: String(artifactId),
+    initialStatus: initial.status,
+    finalStatus: final.status,
+    finalType,
+    finalTypeCodePoints: Array.from(finalType, c => c.codePointAt(0)),
+    bodyMatches: finalBody.equals(body),
+    bodyLength: finalBody.length,
+  });
+}
 console.log('SEQUENTIAL_RESULT', JSON.stringify({
   firstOk: first.ok,
   secondOk: second.ok,
   sameUploadUrl: first.signedUploadUrl === second.signedUploadUrl,
-  artifactId: String(finalized.artifactId),
-  initialStatus: initial.status,
-  finalStatus: final.status,
-  finalType,
-  finalTypeCodePoints: Array.from(finalType, c => c.codePointAt(0)),
-  bodyMatches: finalBody.equals(body),
-  bodyLength: finalBody.length,
+  sameArtifactId: finalizedFirst.artifactId === finalizedSecond.artifactId,
+  observations,
 }));
