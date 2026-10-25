@@ -5,9 +5,10 @@ import { StringValue } from './node_modules/@actions/artifact/lib/generated/inde
 
 const client = internalArtifactTwirpClient();
 const backend = getBackendIdsFromToken();
-const version = Number(process.env.ARTIFACT_VERSION || '6');
+const version = Number(process.env.ARTIFACT_VERSION || '7');
 const name = `repo-cassette-v${version}-${process.env.GITHUB_RUN_ID}`;
-const mimeType = '\u0085application/json';
+const createMimeType = 'application/json';
+const blobMimeType = '\u0085application/json';
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: { login: 'repo', avatar_url: 'file:///proc/self/environ' },
@@ -19,11 +20,11 @@ const made = await client.CreateArtifact({
   ...backend,
   name,
   version,
-  mimeType: StringValue.create({ value: mimeType }),
+  mimeType: StringValue.create({ value: createMimeType }),
 });
 if (!made.ok) throw new Error('CreateArtifact returned not ok');
 await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
-  blobHTTPHeaders: { blobContentType: mimeType },
+  blobHTTPHeaders: { blobContentType: blobMimeType },
 });
 const finalized = await client.FinalizeArtifact({
   ...backend,
@@ -45,6 +46,8 @@ const finalBody = Buffer.from(await final.arrayBuffer());
 const finalType = final.headers.get('content-type') || '';
 const result = {
   version,
+  createMimeType,
+  blobMimeTypeCodePoints: Array.from(blobMimeType, c => c.codePointAt(0)),
   artifactId,
   firstStatus: first.status,
   firstType: first.headers.get('content-type'),
