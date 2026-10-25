@@ -5,7 +5,7 @@ import { StringValue } from './node_modules/@actions/artifact/lib/generated/inde
 
 const client = internalArtifactTwirpClient();
 const backend = getBackendIdsFromToken();
-const version = Number(process.env.ARTIFACT_VERSION || '8');
+const version = Number(process.env.ARTIFACT_VERSION || '7');
 const name = `repo-cassette-v${version}-${process.env.GITHUB_RUN_ID}`;
 const mimeType = '\u0085application/json';
 const body = Buffer.from(JSON.stringify({
