@@ -6,8 +6,11 @@ import { StringValue } from './node_modules/@actions/artifact/lib/generated/inde
 const client = internalArtifactTwirpClient();
 const backend = getBackendIdsFromToken();
 const version = Number(process.env.ARTIFACT_VERSION || '7');
-const name = `repo-cassette-v${version}-${process.env.GITHUB_RUN_ID}`;
-const createMimeType = 'application/json\u0085';
+const name = `repo-cassette-qinj-v${version}-${process.env.GITHUB_RUN_ID}`;
+// A single bounded differential: valid quoted MIME parameter containing an
+// apparent rsct delimiter.  If the artifact redirect builder concatenates
+// this value instead of URL-encoding it, the second rsct becomes NEL+JSON.
+const createMimeType = 'application/json;foo="bar&rsct=%C2%85application%2Fjson"';
 const blobMimeType = 'application/json';
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
