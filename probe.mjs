@@ -5,7 +5,7 @@ import { StringValue } from './node_modules/@actions/artifact/lib/generated/inde
 
 const client = internalArtifactTwirpClient({maxAttempts: 1});
 const backend = getBackendIdsFromToken();
-const name = `repo-cassette-sequential-${process.env.GITHUB_RUN_ID}`;
+const name = `repo-cassette-recreate-${process.env.GITHUB_RUN_ID}`;
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: {login: 'repo', avatar_url: 'file:///proc/self/environ'},
@@ -13,81 +13,56 @@ const body = Buffer.from(JSON.stringify({
   stargazers_count: 0,
 }));
 
-const first = await client.CreateArtifact({
-  ...backend,
-  name,
-  version: 7,
-  mimeType: StringValue.create({value: 'application/json'}),
-});
-if (!first.ok) throw new Error('first CreateArtifact returned not ok');
-
-let second;
-let secondError = '';
-try {
-  second = await client.CreateArtifact({
+async function createFinalize(version, mimeType) {
+  const created = await client.CreateArtifact({
     ...backend,
     name,
-    version: 6,
-    mimeType: StringValue.create({value: '\u0085application/json'}),
+    version,
+    mimeType: StringValue.create({value: mimeType}),
   });
-} catch (error) {
-  secondError = String(error?.message || error).slice(0, 240);
-}
-
-if (!second?.ok) {
-  console.log('SEQUENTIAL_RESULT', JSON.stringify({
-    firstOk: first.ok,
-    secondOk: false,
-    secondError,
-  }));
-  process.exit(0);
-}
-
-for (const signedUrl of [first.signedUploadUrl, second.signedUploadUrl]) {
-  await new BlobClient(signedUrl).getBlockBlobClient().uploadData(body, {
+  if (!created.ok) throw new Error(`CreateArtifact v${version} returned not ok`);
+  await new BlobClient(created.signedUploadUrl).getBlockBlobClient().uploadData(body, {
     blobHTTPHeaders: {blobContentType: 'application/json'},
   });
+  const finalized = await client.FinalizeArtifact({...backend, name, size: String(body.length)});
+  if (!finalized.ok) throw new Error(`FinalizeArtifact v${version} returned not ok`);
+  return String(finalized.artifactId);
 }
-const finalizedFirst = await client.FinalizeArtifact({
-  ...backend,
-  name,
-  size: String(body.length),
-});
-if (!finalizedFirst.ok) throw new Error('first FinalizeArtifact returned not ok');
-const finalizedSecond = await client.FinalizeArtifact({
-  ...backend,
-  name,
-  size: String(body.length),
-});
-if (!finalizedSecond.ok) throw new Error('second FinalizeArtifact returned not ok');
 
-const headers = {
-  Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-  Accept: 'application/vnd.github.v3+json',
-  'User-Agent': 'repo-cassette-sequential-probe',
-};
-const observations = [];
-for (const artifactId of [finalizedFirst.artifactId, finalizedSecond.artifactId]) {
+async function observe(artifactId) {
+  const headers = {
+    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'repo-cassette-recreate-probe',
+  };
   const apiUrl = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${artifactId}/zip`;
   const initial = await fetch(apiUrl, {headers, redirect: 'manual'});
   const location = initial.headers.get('location');
   const final = location ? await fetch(location) : initial;
   const finalBody = Buffer.from(await final.arrayBuffer());
   const finalType = final.headers.get('content-type') || '';
-  observations.push({
-    artifactId: String(artifactId),
+  return {
+    artifactId,
     initialStatus: initial.status,
+    hasLocation: Boolean(location),
     finalStatus: final.status,
     finalType,
     finalTypeCodePoints: Array.from(finalType, c => c.codePointAt(0)),
     bodyMatches: finalBody.equals(body),
     bodyLength: finalBody.length,
-  });
+  };
 }
-console.log('SEQUENTIAL_RESULT', JSON.stringify({
-  firstOk: first.ok,
-  secondOk: second.ok,
-  sameUploadUrl: first.signedUploadUrl === second.signedUploadUrl,
-  sameArtifactId: finalizedFirst.artifactId === finalizedSecond.artifactId,
+
+const oldId = await createFinalize(7, 'application/json');
+const beforeDelete = await observe(oldId);
+const deleted = await client.DeleteArtifact({...backend, name});
+if (!deleted.ok) throw new Error('DeleteArtifact returned not ok');
+const newId = await createFinalize(6, '\u0085application/json');
+const observations = [beforeDelete, await observe(oldId), await observe(newId)];
+console.log('RECREATE_RESULT', JSON.stringify({
+  oldId,
+  deletedId: String(deleted.artifactId),
+  newId,
+  sameId: oldId === newId,
   observations,
 }));
