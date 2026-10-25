@@ -1,0 +1,5 @@
+name: Repo Cassette controlled probe action
+description: Temporary authorized MIME-boundary test
+runs:
+  using: node20
+  main: ../probe.mjs
