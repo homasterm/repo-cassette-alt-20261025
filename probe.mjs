@@ -8,7 +8,7 @@ const backend = getBackendIdsFromToken();
 const body = Buffer.from(JSON.stringify({
   full_name: 'repo/cassette',
   owner: {login: 'repo', avatar_url: 'https://example.invalid/benign.png'},
-  description: 'version-boundary-marker',
+  description: 'dot-json-marker',
   stargazers_count: 0,
 }));
 const headers = {
@@ -18,18 +18,19 @@ const headers = {
 };
 
 const results = [];
-for (let version = 0; version <= 6; version++) {
-  const name = `repo-cassette-v${version}-${process.env.GITHUB_RUN_ID}`;
+for (const mimeType of ['.json']) {
+  const version = 7;
+  const name = `repo-cassette-dot-json-${process.env.GITHUB_RUN_ID}`;
   try {
     const made = await client.CreateArtifact({
       ...backend,
       name,
       version,
-      mimeType: StringValue.create({value: '\u0085application/json'}),
+      mimeType: StringValue.create({value: mimeType}),
     });
     if (!made.ok) throw new Error('create-not-ok');
     await new BlobClient(made.signedUploadUrl).getBlockBlobClient().uploadData(body, {
-      blobHTTPHeaders: {blobContentType: '\u0085application/json'},
+      blobHTTPHeaders: {blobContentType: mimeType},
     });
     const done = await client.FinalizeArtifact({...backend, name, size: String(body.length)});
     if (!done.ok) throw new Error('finalize-not-ok');
@@ -41,6 +42,7 @@ for (let version = 0; version <= 6; version++) {
     const type = final.headers.get('content-type') || '';
     results.push({
       version,
+      requestedType: mimeType,
       artifactId: String(done.artifactId),
       status: first.status,
       finalStatus: final.status,
@@ -50,7 +52,8 @@ for (let version = 0; version <= 6; version++) {
       size: bytes.length,
     });
   } catch (error) {
-    results.push({version, error: String(error?.message || error).slice(0, 160)});
+    results.push({version, requestedType: mimeType,
+      error: String(error?.message || error).slice(0, 160)});
   }
 }
-console.log('VERSION_BOUNDARY_RESULT', JSON.stringify(results));
+console.log('DOT_JSON_RESULT', JSON.stringify(results));
