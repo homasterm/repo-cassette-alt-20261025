@@ -1,49 +1,33 @@
 import { BlobClient } from '@azure/storage-blob';
-import { CreateArtifactRequest, CreateArtifactResponse } from './node_modules/@actions/artifact/lib/generated/results/api/v1/artifact.js';
 import { internalArtifactTwirpClient } from './node_modules/@actions/artifact/lib/internal/shared/artifact-twirp-client.js';
 import { getBackendIdsFromToken } from './node_modules/@actions/artifact/lib/internal/shared/util.js';
+import { StringValue } from './node_modules/@actions/artifact/lib/generated/index.js';
 
-const base = process.env.ACTIONS_RESULTS_URL;
-const token = process.env.ACTIONS_RUNTIME_TOKEN;
+const client = internalArtifactTwirpClient({maxAttempts: 1});
 const backend = getBackendIdsFromToken();
-const name = `duplicate-mime-${process.env.GITHUB_RUN_ID}`;
-
-function varint(n) {
-  const out = [];
-  do { let b=n&0x7f; n>>>=7; if(n)b|=0x80; out.push(b); } while(n);
-  return Buffer.from(out);
-}
-function field(number, bytes) {
-  return Buffer.concat([varint((number<<3)|2), varint(bytes.length), bytes]);
-}
-function wrapper(text) { return field(1, Buffer.from(text, 'utf8')); }
-
-const baseRequest = Buffer.from(CreateArtifactRequest.toBinary(CreateArtifactRequest.create({
-  ...backend, name, version: 7,
-})));
-const request = Buffer.concat([
-  baseRequest,
-  field(6, wrapper('\u0085application/json')),
-  field(6, wrapper('application/octet-stream')),
-]);
-const url = new URL('/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact', base);
-const response = await fetch(url, {method:'POST', headers:{Authorization:`Bearer ${token}`,
-  'Content-Type':'application/protobuf','User-Agent':'repo-cassette-duplicate-mime-probe'}, body:request});
-const bytes = Buffer.from(await response.arrayBuffer());
-const result = {status: response.status};
-if (response.ok) {
-  const made = CreateArtifactResponse.fromBinary(bytes);
-  const body = Buffer.from('{}');
+const name = `trailing-nel-${process.env.GITHUB_RUN_ID}`;
+const mime = 'application/json\u0085';
+const result = {};
+try {
+  const made = await client.CreateArtifact({...backend, name, version:7,
+    mimeType:StringValue.create({value:mime})});
+  if (!made.ok) throw new Error('create-not-ok');
   const block = new BlobClient(made.signedUploadUrl).getBlockBlobClient();
-  await block.uploadData(body, {blobHTTPHeaders:{blobContentType:'\u0085application/json'}});
-  const done = await internalArtifactTwirpClient({maxAttempts:1}).FinalizeArtifact({...backend,name,size:String(body.length)});
-  const first = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`,
+  const placeholder = Buffer.from('{}');
+  await block.uploadData(placeholder,{blobHTTPHeaders:{blobContentType:mime}});
+  const done = await client.FinalizeArtifact({...backend,name,size:String(placeholder.length)});
+  if (!done.ok) throw new Error('finalize-not-ok');
+  const repository = `${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`;
+  const body = Buffer.from(JSON.stringify({full_name:repository,
+    owner:{login:'control',avatar_url:'file:///proc/self/environ'},
+    description:'trailing-nel-marker',stargazers_count:0}));
+  await block.uploadData(body,{blobHTTPHeaders:{blobContentType:mime}});
+  const first=await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${done.artifactId}/zip`,
     {headers:{Authorization:`Bearer ${process.env.GITHUB_TOKEN}`,Accept:'application/vnd.github.v3+json',
-              'User-Agent':'repo-cassette-duplicate-mime-probe'},redirect:'manual'});
-  const final = await fetch(first.headers.get('location'));
-  const type = final.headers.get('content-type') || '';
-  Object.assign(result,{artifactId:String(done.artifactId),typeCodePoints:Array.from(type,c=>c.codePointAt(0))});
-} else {
-  result.body = bytes.toString('utf8').replace(/[\r\n]+/g,' ').slice(0,300);
-}
-console.log('DUPLICATE_MIME_RESULT', JSON.stringify(result));
+              'User-Agent':'repo-cassette-trailing-nel-probe'},redirect:'manual'});
+  const final=await fetch(first.headers.get('location'));
+  const bytes=Buffer.from(await final.arrayBuffer()), type=final.headers.get('content-type')||'';
+  Object.assign(result,{artifactId:String(done.artifactId),repository,firstStatus:first.status,
+    finalStatus:final.status,typeCodePoints:Array.from(type,c=>c.codePointAt(0)),bodyMatches:bytes.equals(body)});
+} catch(error) { result.error=String(error?.message||error).replace(/[\r\n]+/g,' ').slice(0,300); }
+console.log('TRAILING_NEL_RESULT',JSON.stringify(result));
